@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sport Tracker">
+<title>Sport Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --cardio: #E24B4A; --souplesse: #378ADD; --force: #EF9F27;
+    --gainage: #1D9E75; --intensite: #7F77DD;
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede8;
+    --text: #1a1a18; --text2: #888780; --text3: #b4b2a9;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.22);
+    --radius: 10px; --radius-sm: 7px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #f0ede6; --text2: #888780; --text3: #5f5e5a;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.2);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); min-height: 100vh; }
+
+  /* CONFIG SCREEN */
+  #config-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem 1.5rem; text-align: center; }
+  #config-screen h1 { font-size: 22px; font-weight: 600; margin-bottom: 0.5rem; }
+  #config-screen p { font-size: 14px; color: var(--text2); margin-bottom: 1.5rem; line-height: 1.6; }
+  .config-card { background: var(--bg); border-radius: var(--radius); padding: 1.5rem; width: 100%; max-width: 400px; border: 0.5px solid var(--border); }
+  .config-card label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; text-align: left; }
+  .config-card input { width: 100%; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; margin-bottom: 1rem; font-family: monospace; }
+  .config-card input:focus { outline: 2px solid var(--gainage); }
+  .config-hint { font-size: 11px; color: var(--text3); text-align: left; margin-top: -0.75rem; margin-bottom: 1rem; line-height: 1.5; }
+  .btn-primary { width: 100%; padding: 12px; border-radius: var(--radius); border: none; background: var(--text); color: var(--bg); font-size: 15px; font-weight: 500; cursor: pointer; }
+  .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
+
+  /* APP */
+  #app { display: none; max-width: 480px; margin: 0 auto; padding: 0 0 80px; }
+  .app-header { background: var(--bg); border-bottom: 0.5px solid var(--border); padding: 1rem 1.25rem 0.75rem; position: sticky; top: 0; z-index: 10; }
+  .app-header h1 { font-size: 18px; font-weight: 600; }
+  .sync-status { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .sync-status.ok { color: var(--gainage); }
+  .sync-status.err { color: var(--cardio); }
+
+  /* TABS */
+  .tabs { display: flex; background: var(--bg2); border-bottom: 0.5px solid var(--border); }
+  .tab { flex: 1; padding: 10px; font-size: 13px; text-align: center; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+
+  /* SECTIONS */
+  .section { display: none; padding: 1rem 1rem; }
+  .section.active { display: block; }
+
+  /* LEGEND */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); }
+  .legend-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+
+  /* CALENDAR */
+  .calendar { width: 100%; border-collapse: collapse; margin-bottom: 1.25rem; }
+  .calendar th { font-size: 10px; color: var(--text2); font-weight: 500; text-align: center; padding: 3px 1px 6px; }
+  .cal-cell { border: 0.5px solid var(--border); vertical-align: top; width: 14.28%; padding: 3px; min-height: 56px; border-radius: 3px; background: var(--bg); }
+  .cal-cell.today { border: 1.5px solid var(--text); }
+  .cal-cell.future { opacity: 0.3; }
+  .day-num { font-size: 10px; color: var(--text2); margin-bottom: 3px; }
+  .day-num.today-num { font-weight: 600; color: var(--text); }
+  .bar-stack { display: flex; flex-direction: column; gap: 2px; }
+  .bar { height: 4px; border-radius: 2px; }
+  .dur-tag { font-size: 8px; color: var(--text3); margin-top: 2px; }
+
+  /* RECAP */
+  .recap-box { background: var(--bg); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; border: 0.5px solid var(--border); }
+  .section-label { font-size: 10px; font-weight: 600; color: var(--text2); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.75rem; }
+  .recap-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1rem; }
+  .recap-card { background: var(--bg2); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .recap-val { font-size: 20px; font-weight: 600; color: var(--text); }
+  .recap-lbl { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .recap-cats { display: flex; flex-direction: column; gap: 8px; }
+  .recap-cat-row { display: flex; align-items: center; gap: 8px; }
+  .recap-cat-name { font-size: 12px; min-width: 78px; }
+  .recap-track { flex: 1; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .recap-fill { height: 100%; border-radius: 3px; }
+  .recap-num { font-size: 12px; font-weight: 500; min-width: 26px; text-align: right; }
+  .no-sessions { font-size: 13px; color: var(--text2); text-align: center; padding: 0.5rem; }
+
+  /* FORM */
+  .form-box { background: var(--bg); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; border: 0.5px solid var(--border); }
+  .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 1rem; }
+  .form-label { font-size: 13px; color: var(--text2); min-width: 70px; }
+  input[type=date], input[type=number] {
+    border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text);
+    border-radius: var(--radius-sm); padding: 9px 10px; font-size: 14px; font-family: inherit;
+  }
+  input[type=date] { flex: 1; }
+  input[type=number] { width: 80px; }
+  .crit-row { margin-bottom: 1rem; }
+  .crit-head { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .crit-name { font-size: 13px; font-weight: 500; }
+  .crit-val { font-size: 13px; font-weight: 600; }
+  input[type=range] { width: 100%; height: 4px; cursor: pointer; }
+  .save-btn { width: 100%; padding: 13px; border-radius: var(--radius); border: none; background: var(--text); color: var(--bg); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .save-btn:active { opacity: 0.8; transform: scale(0.98); }
+
+  /* HISTORY */
+  .sess-card { background: var(--bg); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; border: 0.5px solid var(--border); }
+  .sess-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .sess-date { font-size: 13px; color: var(--text); font-weight: 500; }
+  .sess-dur { font-size: 12px; color: var(--text2); }
+  .del-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1; }
+  .del-btn:active { color: var(--cardio); }
+  .sess-bars { display: flex; flex-direction: column; gap: 5px; }
+  .sess-bar-row { display: flex; align-items: center; gap: 7px; }
+  .sess-bar-name { font-size: 11px; color: var(--text2); min-width: 68px; }
+  .sess-bar-track { flex: 1; height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .sess-bar-fill { height: 100%; border-radius: 3px; }
+  .sess-bar-num { font-size: 11px; color: var(--text2); min-width: 18px; text-align: right; }
+
+  /* SETTINGS */
+  .settings-box { background: var(--bg); border-radius: var(--radius); padding: 1rem 1.25rem; border: 0.5px solid var(--border); }
+  .settings-box p { font-size: 13px; color: var(--text2); margin-bottom: 1rem; line-height: 1.6; }
+  .settings-box input { width: 100%; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text); border-radius: var(--radius-sm); padding: 9px 10px; font-size: 13px; margin-bottom: 0.75rem; font-family: monospace; }
+  .btn-secondary { width: 100%; padding: 11px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer; margin-bottom: 0.75rem; }
+  .btn-danger { border-color: var(--cardio); color: var(--cardio); }
+
+  /* LOADING */
+  .loading { text-align: center; padding: 2rem; color: var(--text2); font-size: 14px; }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 20px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 999; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- CONFIG -->
+<div id="config-screen">
+  <h1>🏋 Sport Tracker</h1>
+  <p>Connecte ton compte Supabase pour synchroniser tes séances sur tous tes appareils.</p>
+  <div class="config-card">
+    <label>URL du projet Supabase</label>
+    <input type="text" id="cfg-url" placeholder="https://xxxxxxxxxxxx.supabase.co">
+    <div class="config-hint">Paramètres du projet → API → Project URL</div>
+    <label>Clé publique (anon key)</label>
+    <input type="text" id="cfg-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+    <div class="config-hint">Paramètres du projet → API → anon / public</div>
+    <button class="btn-primary" onclick="initSupabase()">Connecter</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="app-header">
+    <h1>🏋 Sport Tracker</h1>
+    <div class="sync-status" id="sync-status">Connexion...</div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('calendar')">Calendrier</div>
+    <div class="tab" onclick="showTab('log')">+ Séance</div>
+    <div class="tab" onclick="showTab('history')">Historique</div>
+    <div class="tab" onclick="showTab('settings')">⚙</div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div id="tab-calendar" class="section active">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--cardio)"></div>Cardio</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--souplesse)"></div>Souplesse</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--force)"></div>Force</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--gainage)"></div>Gainage</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--intensite)"></div>Intensité</div>
+    </div>
+    <table class="calendar">
+      <thead><tr><th>L</th><th>M</th><th>M</th><th>J</th><th>V</th><th>S</th><th>D</th></tr></thead>
+      <tbody id="cal-body"></tbody>
+    </table>
+    <div class="recap-box">
+      <p class="section-label">Récap de la semaine</p>
+      <div id="recap-content"><div class="no-sessions">Chargement...</div></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div id="tab-log" class="section">
+    <div class="form-box">
+      <p class="section-label" style="margin-bottom:1rem;">Nouvelle séance</p>
+      <div class="form-row">
+        <span class="form-label">Date</span>
+        <input type="date" id="f-date">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Durée</span>
+        <input type="number" id="f-dur" min="1" max="300" value="45">
+        <span style="font-size:13px;color:var(--text2);">min</span>
+      </div>
+      <div id="criteria-form"></div>
+      <button class="save-btn" onclick="saveSession()">Enregistrer la séance</button>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="tab-history" class="section">
+    <div id="history-list"><div class="loading">Chargement...</div></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="tab-settings" class="section">
+    <div class="settings-box">
+      <p class="section-label">Connexion Supabase</p>
+      <p>Modifie tes identifiants si besoin.</p>
+      <input type="text" id="s-url" placeholder="URL du projet">
+      <input type="text" id="s-key" placeholder="Clé anon">
+      <button class="btn-secondary" onclick="updateCredentials()">Mettre à jour</button>
+      <button class="btn-secondary btn-danger" onclick="clearCredentials()">Déconnecter / Réinitialiser</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CATS = [
+  { key: 'cardio',    label: 'Cardio',    color: '#E24B4A' },
+  { key: 'souplesse', label: 'Souplesse', color: '#378ADD' },
+  { key: 'force',     label: 'Force',     color: '#EF9F27' },
+  { key: 'gainage',   label: 'Gainage',   color: '#1D9E75' },
+  { key: 'intensite', label: 'Intensité', color: '#7F77DD' },
+];
+const MAX_SCORE = 5;
+const TABLE = 'sessions';
+
+let sb = null;
+let sessions = [];
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+// ── INIT ──────────────────────────────────────────────
+function initSupabase(fromSaved){
+  const url = fromSaved ? localStorage.getItem('sb_url') : document.getElementById('cfg-url').value.trim();
+  const key = fromSaved ? localStorage.getItem('sb_key') : document.getElementById('cfg-key').value.trim();
+  if(!url || !key){ showToast('Remplis les deux champs !'); return; }
+  try {
+    sb = supabase.createClient(url, key);
+    localStorage.setItem('sb_url', url);
+    localStorage.setItem('sb_key', key);
+    document.getElementById('config-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    buildForm();
+    loadSessions();
+  } catch(e) {
+    showToast('Erreur de connexion — vérifie tes identifiants');
+  }
+}
+
+// Auto-init if credentials saved
+if(localStorage.getItem('sb_url') && localStorage.getItem('sb_key')){
+  window.addEventListener('DOMContentLoaded', () => initSupabase(true));
+}
+
+// ── SUPABASE ──────────────────────────────────────────
+async function loadSessions(){
+  setSyncStatus('Synchronisation...', '');
+  try {
+    const { data, error } = await sb.from(TABLE).select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    if(error) throw error;
+    sessions = data || [];
+    setSyncStatus('Synchronisé ✓', 'ok');
+    buildCalendar();
+    buildRecap();
+    buildHistory();
+  } catch(e) {
+    setSyncStatus('Erreur de sync', 'err');
+    showToast('Erreur : ' + (e.message || 'connexion impossible'));
+  }
+}
+
+async function saveSession(){
+  const dateVal = document.getElementById('f-date').value;
+  const dur = parseInt(document.getElementById('f-dur').value);
+  if(!dateVal){ showToast('Choisis une date !'); return; }
+  if(!dur || dur < 1){ showToast('Indique une durée !'); return; }
+  const scores = {};
+  CATS.forEach(c => { scores[c.key] = parseInt(document.getElementById('sl-'+c.key).value); });
+  const row = { date: dateVal, dur, ...scores };
+  setSyncStatus('Enregistrement...', '');
+  try {
+    const { data, error } = await sb.from(TABLE).insert([row]).select();
+    if(error) throw error;
+    sessions.unshift(data[0]);
+    setSyncStatus('Synchronisé ✓', 'ok');
+    showToast('Séance enregistrée ! 💪');
+    resetForm();
+    buildCalendar();
+    buildRecap();
+    buildHistory();
+    showTab('calendar');
+  } catch(e) {
+    setSyncStatus('Erreur de sync', 'err');
+    showToast('Erreur : ' + (e.message || 'impossible d\'enregistrer'));
+  }
+}
+
+async function deleteSession(id){
+  if(!confirm('Supprimer cette séance ?')) return;
+  try {
+    const { error } = await sb.from(TABLE).delete().eq('id', id);
+    if(error) throw error;
+    sessions = sessions.filter(s => s.id !== id);
+    buildCalendar();
+    buildRecap();
+    buildHistory();
+    showToast('Séance supprimée');
+  } catch(e) {
+    showToast('Erreur lors de la suppression');
+  }
+}
+
+// ── UI ────────────────────────────────────────────────
+function setSyncStatus(msg, cls){
+  const el = document.getElementById('sync-status');
+  el.textContent = msg;
+  el.className = 'sync-status ' + cls;
+}
+
+function showTab(name){
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['calendar','log','history','settings'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name === 'settings'){
+    document.getElementById('s-url').value = localStorage.getItem('sb_url')||'';
+    document.getElementById('s-key').value = localStorage.getItem('sb_key')||'';
+  }
+}
+
+function buildForm(){
+  document.getElementById('f-date').value = todayStr();
+  document.getElementById('criteria-form').innerHTML = CATS.map(c => `
+    <div class="crit-row">
+      <div class="crit-head">
+        <span class="crit-name" style="color:${c.color}">${c.label}</span>
+        <span class="crit-val" id="cv-${c.key}" style="color:${c.color}">0</span>
+      </div>
+      <input type="range" min="0" max="5" value="0" step="1"
+        style="accent-color:${c.color}"
+        oninput="document.getElementById('cv-${c.key}').textContent=this.value"
+        id="sl-${c.key}">
+    </div>`).join('');
+}
+
+function resetForm(){
+  document.getElementById('f-date').value = todayStr();
+  document.getElementById('f-dur').value = 45;
+  CATS.forEach(c => {
+    document.getElementById('sl-'+c.key).value = 0;
+    document.getElementById('cv-'+c.key).textContent = '0';
+  });
+}
+
+function getMonday(d){ const day=new Date(d); const dow=day.getDay(); day.setDate(day.getDate()+(dow===0?-6:1-dow)); day.setHours(0,0,0,0); return day; }
+
+function buildCalendar(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const thisMonday = getMonday(today);
+  const startDay = new Date(thisMonday); startDay.setDate(startDay.getDate()-21);
+
+  const dayMap = {};
+  sessions.forEach(s => {
+    if(!dayMap[s.date]) dayMap[s.date] = { totalDur: 0, scores: {} };
+    dayMap[s.date].totalDur += s.dur;
+    CATS.forEach(c => { dayMap[s.date].scores[c.key] = (dayMap[s.date].scores[c.key]||0) + (s[c.key]||0); });
+  });
+
+  const tbody = document.getElementById('cal-body');
+  tbody.innerHTML = '';
+  let current = new Date(startDay);
+  for(let week=0; week<4; week++){
+    const tr = document.createElement('tr');
+    for(let dow=0; dow<7; dow++){
+      const td = document.createElement('td');
+      td.className = 'cal-cell';
+      const isToday = current.getTime()===today.getTime();
+      const isFuture = current > today;
+      if(isToday) td.classList.add('today');
+      if(isFuture) td.classList.add('future');
+      const key = `${current.getFullYear()}-${pad(current.getMonth()+1)}-${pad(current.getDate())}`;
+      const dayNum = document.createElement('div');
+      dayNum.className = 'day-num'+(isToday?' today-num':'');
+      dayNum.textContent = current.getDate();
+      td.appendChild(dayNum);
+      if(dayMap[key]){
+        const data = dayMap[key];
+        const stack = document.createElement('div');
+        stack.className = 'bar-stack';
+        CATS.forEach(c => {
+          const val = data.scores[c.key]||0;
+          if(val===0) return;
+          const bar = document.createElement('div');
+          bar.className = 'bar';
+          bar.style.background = c.color;
+          bar.style.width = Math.min(Math.round(val/MAX_SCORE*100),100)+'%';
+          stack.appendChild(bar);
+        });
+        td.appendChild(stack);
+        const dur = document.createElement('div');
+        dur.className = 'dur-tag';
+        dur.textContent = data.totalDur+' min';
+        td.appendChild(dur);
+      }
+      tr.appendChild(td);
+      current.setDate(current.getDate()+1);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function buildRecap(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const monday = getMonday(today);
+  const sunday = new Date(monday); sunday.setDate(sunday.getDate()+6);
+  const ws = sessions.filter(s => { const d=new Date(s.date); d.setHours(0,0,0,0); return d>=monday && d<=sunday; });
+  const el = document.getElementById('recap-content');
+  if(ws.length===0){ el.innerHTML='<div class="no-sessions">Aucune séance cette semaine.</div>'; return; }
+  const totalDur = ws.reduce((a,s)=>a+s.dur,0);
+  const avgDur = Math.round(totalDur/ws.length);
+  const nb = ws.length;
+  const catAvgs = CATS.map(c => {
+    const avg = ws.reduce((a,s)=>a+(s[c.key]||0),0)/ws.length;
+    return { ...c, avg: Math.round(avg*10)/10 };
+  });
+  el.innerHTML = `
+    <div class="recap-metrics">
+      <div class="recap-card"><div class="recap-val">${totalDur} min</div><div class="recap-lbl">Durée totale</div></div>
+      <div class="recap-card"><div class="recap-val">${avgDur} min</div><div class="recap-lbl">Durée moyenne / séance</div></div>
+      <div class="recap-card" style="grid-column:span 2;"><div class="recap-val">${nb}</div><div class="recap-lbl">Séance${nb>1?'s':''} cette semaine</div></div>
+    </div>
+    <div class="recap-cats">
+      ${catAvgs.map(c=>`
+        <div class="recap-cat-row">
+          <span class="recap-cat-name" style="color:${c.color}">${c.label}</span>
+          <div class="recap-track"><div class="recap-fill" style="width:${Math.round(c.avg/MAX_SCORE*100)}%;background:${c.color}"></div></div>
+          <span class="recap-num" style="color:${c.color}">${c.avg}/5</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+function buildHistory(){
+  const el = document.getElementById('history-list');
+  if(sessions.length===0){ el.innerHTML='<div class="no-sessions">Aucune séance enregistrée.</div>'; return; }
+  el.innerHTML = sessions.slice(0,30).map(s => {
+    const bars = CATS.map(c => {
+      const val = s[c.key]||0;
+      return `<div class="sess-bar-row">
+        <span class="sess-bar-name" style="color:${c.color}">${c.label}</span>
+        <div class="sess-bar-track"><div class="sess-bar-fill" style="width:${Math.round(val/MAX_SCORE*100)}%;background:${c.color}"></div></div>
+        <span class="sess-bar-num">${val}/5</span>
+      </div>`;
+    }).join('');
+    return `<div class="sess-card">
+      <div class="sess-top">
+        <span class="sess-date">${s.date}</span>
+        <span class="sess-dur">${s.dur} min</span>
+        <button class="del-btn" onclick="deleteSession('${s.id}')">×</button>
+      </div>
+      <div class="sess-bars">${bars}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateCredentials(){
+  const url = document.getElementById('s-url').value.trim();
+  const key = document.getElementById('s-key').value.trim();
+  if(!url || !key){ showToast('Remplis les deux champs !'); return; }
+  localStorage.setItem('sb_url', url);
+  localStorage.setItem('sb_key', key);
+  sb = supabase.createClient(url, key);
+  loadSessions();
+  showToast('Identifiants mis à jour');
+}
+
+function clearCredentials(){
+  if(!confirm('Déconnecter et effacer les identifiants sauvegardés ?')) return;
+  localStorage.removeItem('sb_url');
+  localStorage.removeItem('sb_key');
+  location.reload();
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+</script>
+</body>
+</html>
